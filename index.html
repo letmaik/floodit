@@ -29,7 +29,8 @@
 var map = L.map('map', {
   // initial center and zoom has to be set before layers can be added
   center: [-13.8868043, 34.5410842],
-  zoom: 7
+  zoom: 7,
+  maxZoom: 11
 })
 
 var baseLayerLabels = {
@@ -48,6 +49,43 @@ for (var id in baseLayerLabels) {
 }
 baseLayers[baseLayerLabels['MapQuestOpen.Aerial']].addTo(map)
 
+for (var dayspast=0; dayspast <= 3; dayspast++) {
+	var modis_template =
+	    "//map1{s}.vis.earthdata.nasa.gov/wmts-webmerc/" +
+	    "{layer}/default/{time}/{tileMatrixSet}/{z}/{y}/{x}.jpg";
+	
+	var date = new Date()
+	date.setUTCDate(date.getUTCDate() - dayspast)
+	    
+	var modis = L.tileLayer(modis_template, {
+	    layer: "MODIS_Terra_CorrectedReflectance_TrueColor",
+	    tileMatrixSet: "GoogleMapsCompatible_Level9",
+	    maxZoom: 10,
+	    maxNativeZoom: 9,
+	    time: date.toISOString().split("T")[0], // YYYY-MM-DD
+	    tileSize: 256,
+	    subdomains: "abc",
+	    noWrap: true,
+	    continuousWorld: true,
+	    // Prevent Leaflet from retrieving non-existent tiles on the
+	    // borders.
+	    bounds: [
+	        [-85.0511287776, -179.999999975],
+	        [85.0511287776, 179.999999975]
+	    ],
+	    attribution:
+	        "<a href='https://wiki.earthdata.nasa.gov/display/GIBS'>" +
+	        "NASA EOSDIS GIBS</a>"
+	});
+	if (dayspast === 0) {
+	  date = 'Today'
+	} else if (dayspast === 1) {
+	  date = 'Yesterday'
+	} else {
+	  date = date.toISOString().split("T")[0]
+	}
+	baseLayers['MODIS Terra: ' + date] = modis
+}
 
 var baseMaps = [{
   groupName: 'Base Maps',
@@ -63,7 +101,7 @@ var layerControl = L.Control.styledLayerControl(baseMaps, [], {
 map.addControl(layerControl)
 
 map.on('click', function (e) {
-  var buffer = 0.09
+  var buffer = 0.13
   var pos = e.latlng
   var southwest = L.latLng(pos.lat-buffer, pos.lng-buffer)
   var northeast = L.latLng(pos.lat+buffer, pos.lng+buffer)
