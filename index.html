@@ -84,6 +84,7 @@ var rainbow = L.coverage.palette.linearPalette(['#0000FF', '#00FFFF', '#00FF00',
 
 var floodLayer = null
 var threshSlider = null
+var lastThreshIdx = 1
 
 function loadDEM (bbox) {
   var lonWest = bbox.getWest()
@@ -105,31 +106,21 @@ function loadDEM (bbox) {
       
       var thresholds = logslider(min, max)
       
-      var threshold = thresholds[5]
-      console.log(min, max, threshold)
-      
-      var newcov = applyThreshold(cov, threshold)
-      
-      if (floodLayer) {
-        map.removeLayer(floodLayer)
-      }
-      floodLayer = LayerFactory(newcov, {
-          keys: [paramKey],
-          palette: blue
-      })
-      floodLayer.setZIndex(10)
-      floodLayer.addTo(map)
-      
       if (threshSlider) {
+        lastThreshIdx = parseInt(threshSlider.value)
         map.removeControl(threshSlider)
       }
-      threshSlider = L.control.slider(function(value) {
-        var threshold = thresholds[value]
+      threshSlider = new L.Control.Slider(function(value) {
+        var threshold = thresholds[parseInt(value)]
         var newcov = applyThreshold(cov, threshold)
-        map.removeLayer(floodLayer)
+        if (floodLayer) {
+          map.removeLayer(floodLayer)  
+        }
         floodLayer = LayerFactory(newcov, {
           keys: [paramKey],
           palette: blue
+	      }).on('add', function () {
+	        map.fitBounds(floodLayer.getBounds())
 	      })
 	      floodLayer.setZIndex(10)
 	      floodLayer.addTo(map)
@@ -138,9 +129,11 @@ function loadDEM (bbox) {
         id: 'slider',
         logo: 'F',
         size: '250px',
-        value: 0,
+        collapsed: false,
+        value: lastThreshIdx,
         min: 0,
         max: 9,
+        syncSlider: true,
         getValue: function(i) {
           return thresholds[i] + 'm'
         }
