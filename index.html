@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+  <title>Flood it!</title>
+  
+  <script>
+    // use canvas for vector rendering in Leaflet (faster)
+    L_PREFER_CANVAS = true;
+  </script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css">
+  <link rel="stylesheet" href="lib/styledLayerControl/styledLayerControl.css">
+  <link rel="stylesheet" href="lib/leaflet-slider/leaflet-slider.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
+  <script src="https://cdn.rawgit.com/leaflet-extras/leaflet-providers/1.1.7/leaflet-providers.js"></script>
+  <script src="lib/styledLayerControl.js"></script>
+  <script src="lib/leaflet-slider/leaflet-slider.js"></script>
+  <script src="lib/covjson-reader.src.js"></script>
+  <script>
+  c3 = {}
+  </script>
+  <script src="lib/leaflet-coverage.src.js"></script>
+  
+  <script>
+var map = L.map('map', {
+  // initial center and zoom has to be set before layers can be added
+  center: [-13.8868043, 34.5410842],
+  zoom: 7
+})
+
+var baseLayerLabels = {
+  'Hydda.Base': 'Hydda',
+  'OpenStreetMap': 'OpenStreetMap',
+  'OpenStreetMap.BlackAndWhite': 'OpenStreetMap (B/W)',
+  'OpenTopoMap': 'OpenTopoMap',
+  'MapQuestOpen.Aerial': 'MapQuestOpen Aerial'  
+}
+
+var baseLayers = {}
+for (var id in baseLayerLabels) {
+  var layer = L.tileLayer.provider(id)
+  
+  baseLayers[baseLayerLabels[id]] = layer
+}
+baseLayers[baseLayerLabels['MapQuestOpen.Aerial']].addTo(map)
+
+
+var baseMaps = [{
+  groupName: 'Base Maps',
+  expanded: true,
+  layers: baseLayers
+}]
+
+var layerControl = L.Control.styledLayerControl(baseMaps, [], {
+  container_width     : "300px",
+  container_maxHeight : "500px",
+  collapsed: false
+})
+map.addControl(layerControl)
+
+map.on('click', function (e) {
+  var buffer = 0.045
+  var pos = e.latlng
+  var southwest = L.latLng(pos.lat-buffer, pos.lng-buffer)
+  var northeast = L.latLng(pos.lat+buffer, pos.lng+buffer)
+  // the bbox to use for our flooding simulation
+  // for this area we will load DEM data
+  var bbox = L.latLngBounds(southwest, northeast)
+  console.log(bbox)
+  loadDEM(bbox)
+})
+
+var LayerFactory = L.coverage.LayerFactory()
+
+var paramKey = 'Band1'
+
+//var blue = L.coverage.palette.linearPalette(['#0000FF', '#0000FF'])
+var blue = L.coverage.palette.directPalette(['blue'])
+var rainbow = L.coverage.palette.linearPalette(['#0000FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF0000'])
+
+var floodLayer = null
+var threshSlider = null
+
+function loadDEM (bbox) {
+  var lonWest = bbox.getWest()
+  var lonEast = bbox.getEast()
+  var latSouth = bbox.getSouth()
+  var latNorth = bbox.getNorth()
+  CovJSON.read("http://localhost:8080/wms?FORMAT=application/prs.coverage+json&TRANSPARENT=TRUE&STYLES=default-scalar%2Fdefault&LAYERS=dem2%2FBand1&COLORSCALERANGE=0%2C100&NUMCOLORBANDS=250&ABOVEMAXCOLOR=0x000000&BELOWMINCOLOR=0x000000&BGCOLOR=transparent&LOGSCALE=false&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG%3A4326&BBOX=" + lonWest + "," + latSouth + "," + lonEast + "," + latNorth +"&WIDTH=256&HEIGHT=256")
+  .then(function(cov) {
+    if (cov.coverages) {
+      cov = cov.coverages[0]
+    }
+    
+    //console.log(cov)
+    cov.loadRange(paramKey).then(function (range) {
+      //console.log(range)
+      
+      var min = range.validMin
+      var max = range.validMax
+      
+      var thresholds = logslider(min, max)
+      
+      var threshold = thresholds[5]
+      console.log(min, max, threshold)
+      
+      var newcov = applyThreshold(cov, threshold)
+      
+      if (floodLayer) {
+        map.removeLayer(floodLayer)
+      }
+      floodLayer = LayerFactory(newcov, {
+          keys: [paramKey],
+          palette: blue
+      })
+      floodLayer.setZIndex(10)
+      floodLayer.addTo(map)
+      
+      if (threshSlider) {
+        map.removeControl(threshSlider)
+      }
+      threshSlider = L.control.slider(function(value) {
+        var threshold = thresholds[value]
+        var newcov = applyThreshold(cov, threshold)
+        map.removeLayer(floodLayer)
+        floodLayer = LayerFactory(newcov, {
+          keys: [paramKey],
+          palette: blue
+	      })
+	      floodLayer.setZIndex(10)
+	      floodLayer.addTo(map)
+      }, {
+        orientation:'vertical',
+        id: 'slider',
+        logo: 'F',
+        size: '250px',
+        value: 0,
+        min: 0,
+        max: 9,
+        getValue: function(i) {
+          return thresholds[i] + 'm'
+        }
+      })
+      threshSlider.addTo(map)
+    })
+    
+    // debug output
+    /*
+
+    var layer = LayerFactory(cov, {
+        keys: [paramKey],
+        palette: rainbow
+    })
+    layer.setZIndex(10)
+    layer.addTo(map);
+    */
+  })
+}
+
+var waterVal = 0
+
+function applyThreshold (cov, threshold) {
+  var rangeWrapper = function (domain, range) {
+    var newrange = shallowcopy(range)
+    newrange.get = function (obj) {
+      if (range.get({x: obj.x, y: obj.y}) < threshold) {
+        return waterVal // random constant value = water
+      } else {
+        return null // no water
+      }
+    }
+    newrange.dataType = 'integer'
+    return newrange
+  }
+  
+  var loadRange = function(key) {
+    return Promise.all([cov.loadDomain(), cov.loadRange(key)])
+      .then(function (result) {
+        var domain = result[0]
+        var range = result[1]
+        return rangeWrapper(domain, range)
+      })
+  }
+  
+  var newcov = shallowcopy(cov)
+  newcov.loadRange = loadRange
+  newcov.loadRanges = null
+  newcov.subsetByIndex = function () {
+    // need to override this as well, otherwise it uses original data
+    // we don't subset anyway, so this is fine
+    return Promise.resolve(newcov)
+  }
+  
+  newcov.parameters = new Map()
+  newcov.parameters.set(paramKey, {
+    key: paramKey,
+    observedProperty: {
+      categories: [{
+        id: 'water'
+      }]
+    },
+    categoryEncoding: new Map([['water', [waterVal]]])
+  })
+  
+  return newcov
+}
+
+function logslider( min, max ) {   
+  // The result should be between:
+  //   minv, maxv
+  var minv = Math.log( min );
+  var range = max - min;
+  var maxv = Math.log( min + ( range / 2 ) );
+  var step = range / 10    // calculate adjustment factor
+  
+  var scale = (maxv-minv) / (max-min);
+  var position = min;
+  var slider = [];
+  for ( i = 0; i < 10; i++) {        
+      slider.push(Math.ceil(Math.exp(minv + scale*(position-min))));
+      position = position + step;
+  }    
+  return slider;
+}
+
+function shallowcopy (obj) {
+  if (obj instanceof Map) {
+    copy = new Map(obj)
+  } else {
+    copy = Object.create(Object.getPrototypeOf(obj))
+    for (var prop in obj) {
+      copy[prop] = obj[prop]
+    } 
+  }
+  return copy
+}
+
+  </script>
+</body>
+</html>
