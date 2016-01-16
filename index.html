@@ -63,7 +63,7 @@ var layerControl = L.Control.styledLayerControl(baseMaps, [], {
 map.addControl(layerControl)
 
 map.on('click', function (e) {
-  var buffer = 0.045
+  var buffer = 0.09
   var pos = e.latlng
   var southwest = L.latLng(pos.lat-buffer, pos.lng-buffer)
   var northeast = L.latLng(pos.lat+buffer, pos.lng+buffer)
@@ -82,16 +82,16 @@ var paramKey = 'Band1'
 var blue = L.coverage.palette.directPalette(['blue'])
 var rainbow = L.coverage.palette.linearPalette(['#0000FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF0000'])
 
+var tilesize = 512
 var floodLayer = null
 var threshSlider = null
-var lastThreshIdx = 1
 
 function loadDEM (bbox) {
   var lonWest = bbox.getWest()
   var lonEast = bbox.getEast()
   var latSouth = bbox.getSouth()
   var latNorth = bbox.getNorth()
-  CovJSON.read("http://localhost:8080/wms?FORMAT=application/prs.coverage+json&TRANSPARENT=TRUE&STYLES=default-scalar%2Fdefault&LAYERS=dem2%2FBand1&COLORSCALERANGE=0%2C100&NUMCOLORBANDS=250&ABOVEMAXCOLOR=0x000000&BELOWMINCOLOR=0x000000&BGCOLOR=transparent&LOGSCALE=false&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG%3A4326&BBOX=" + lonWest + "," + latSouth + "," + lonEast + "," + latNorth +"&WIDTH=256&HEIGHT=256")
+  CovJSON.read("http://localhost:8080/wms?FORMAT=application/prs.coverage+json&TRANSPARENT=TRUE&STYLES=default-scalar%2Fdefault&LAYERS=dem2%2FBand1&COLORSCALERANGE=0%2C100&NUMCOLORBANDS=250&ABOVEMAXCOLOR=0x000000&BELOWMINCOLOR=0x000000&BGCOLOR=transparent&LOGSCALE=false&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG%3A4326&BBOX=" + lonWest + "," + latSouth + "," + lonEast + "," + latNorth +"&WIDTH=" + tilesize +"&HEIGHT=" + tilesize)
   .then(function(cov) {
     if (cov.coverages) {
       cov = cov.coverages[0]
@@ -107,7 +107,6 @@ function loadDEM (bbox) {
       var thresholds = logslider(min, max)
       
       if (threshSlider) {
-        lastThreshIdx = parseInt(threshSlider.value)
         map.removeControl(threshSlider)
       }
       threshSlider = new L.Control.Slider(function(value) {
@@ -130,7 +129,7 @@ function loadDEM (bbox) {
         logo: 'F',
         size: '250px',
         collapsed: false,
-        value: lastThreshIdx,
+        value: 1,
         min: 0,
         max: 9,
         syncSlider: true,
