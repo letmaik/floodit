@@ -21,6 +21,6 @@ The following lists all technologies that have been used in this project.
 - [Leaflet](http://leafletjs.com/) for map display
 - [covjson-reader](https://github.com/Reading-eScience-Centre/covjson-reader) to read CoverageJSON resources
 - [leaflet-coverage](https://github.com/Reading-eScience-Centre/leaflet-coverage) to display flooding on a map (by representing the flood as a grid coverage)
-- [Leaflet.StyledLayerControl](https://github.com/davicustodio/Leaflet.StyledLayerControl) for switching between base and overlay layers
+- [Leaflet.StyledLayerControl](https://github.com/davicustodio/Leaflet.StyledLayerControl) for switching between layers
 - [LeafletSlider](https://github.com/dwilhelm89/LeafletSlider) for setting the flooding threshold
 - [CanvasJS](http://canvasjs.com/) for displaying the return level chart
