@@ -3,10 +3,6 @@
 <head>
   <title>Flood it!</title>
   
-  <script>
-    // use canvas for vector rendering in Leaflet (faster)
-    L_PREFER_CANVAS = true;
-  </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css">
   <link rel="stylesheet" href="lib/styledLayerControl/styledLayerControl.css">
   <link rel="stylesheet" href="lib/leaflet-slider/leaflet-slider.css">
@@ -17,6 +13,8 @@
   
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
   <script src="https://cdn.rawgit.com/leaflet-extras/leaflet-providers/1.1.7/leaflet-providers.js"></script>
+  <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/1.0.2/Chart.min.js"></script>-->
+  <script src="http://canvasjs.com/assets/script/canvasjs.min.js"></script>
   <script src="lib/styledLayerControl.js"></script>
   <script src="lib/leaflet-slider/leaflet-slider.js"></script>
   <script src="lib/covjson-reader.src.js"></script>
@@ -30,8 +28,10 @@ var map = L.map('map', {
   // initial center and zoom has to be set before layers can be added
   center: [-13.8868043, 34.5410842],
   zoom: 7,
-  maxZoom: 11
+  maxZoom: 15
 })
+
+L.control.scale().addTo(map);
 
 var baseLayerLabels = {
   'Hydda.Base': 'Hydda',
@@ -47,7 +47,9 @@ for (var id in baseLayerLabels) {
   
   baseLayers[baseLayerLabels[id]] = layer
 }
-baseLayers[baseLayerLabels['MapQuestOpen.Aerial']].addTo(map)
+var currentBaseLayer = baseLayers[baseLayerLabels['MapQuestOpen.Aerial']]
+
+currentBaseLayer.addTo(map)
 
 for (var dayspast=0; dayspast <= 3; dayspast++) {
 	var modis_template =
@@ -93,7 +95,25 @@ var baseMaps = [{
   layers: baseLayers
 }]
 
-var layerControl = L.Control.styledLayerControl(baseMaps, [], {
+var sumalhege = L.tileLayer.wms("http://www.globalfloods.eu/proxy/?srv=ows", {
+  layers: 'sumALHEGE',
+  format: 'image/png',
+  time: '2016-01-16T00:00:00',
+  transparent: true,
+  version: '1.3.0',
+  attribution: "Globalfloods.eu"
+});
+
+var overlays = [{
+    groupName : "Overlays",
+    expanded  : true,
+    layers    : { 
+        "5 Year Return Period Exceedance" : sumalhege
+    }
+ }]
+
+
+var layerControl = L.Control.styledLayerControl(baseMaps, overlays, {
   container_width     : "300px",
   container_maxHeight : "500px",
   collapsed: false
@@ -112,11 +132,23 @@ map.on('click', function (e) {
   loadDEM(bbox)
 })
 
+
+
+map.on('baselayerchange', function(e) {
+  currentBaseLayer = e.layer
+})
+
+map.on('zoomend', function() {
+  if (map.getZoom() > 9) {
+    map.removeLayer(currentBaseLayer)
+    map.addLayer(baseLayers['OpenStreetMap'])
+  }
+})
+
 var LayerFactory = L.coverage.LayerFactory()
 
 var paramKey = 'Band1'
 
-//var blue = L.coverage.palette.linearPalette(['#0000FF', '#0000FF'])
 var blue = L.coverage.palette.directPalette(['blue'])
 var rainbow = L.coverage.palette.linearPalette(['#0000FF', '#00FFFF', '#00FF00', '#FFFF00', '#FF0000'])
 
@@ -124,7 +156,153 @@ var tilesize = 512
 var floodLayer = null
 var threshSlider = null
 
+var chart = null
+
+function getTally (ensemble_discharge, levs2, levs5, levs20) {
+  var levs20_tally = 0;
+  var levs5_tally = 0;
+  var levs2_tally = 0;
+  var no_lev_tally = 0;
+
+  for ( var i = 0; i < ensemble_discharge.length; i++ ) {
+    console.log(ensemble_discharge[i]);
+      if (ensemble_discharge[i] > levs20) {
+        levs20_tally += 1 ;
+    } else if (ensemble_discharge[i] > levs5) {
+      levs5_tally += 1 ;
+    } else if (ensemble_discharge[i] > levs2) { 
+      levs20_tally += 1 ;
+    } else {
+      no_lev_tally += 1;
+    };
+  };
+  return {
+    levs20: levs20_tally,
+    levs5: levs5_tally,
+    levs2: levs2_tally,
+    no: no_lev_tally
+  }
+}
+
+function displayChart(tallys) {
+  var control = L.control({
+    position: 'topleft'
+  })
+  
+  var no = tallys.no
+  var two = tallys.levs2
+  var five = tallys.levs5
+  var twenty = tallys.levs20
+  
+  control.onAdd = function (map) {
+    var el = L.DomUtil.create('div', 'charty');
+
+    
+    var chart = new CanvasJS.Chart(el, {
+        height:100,
+        axisY:{
+          tickLength: 5,
+          tickThickness: 2,
+          labelFontSize: 15,
+          minimum:0,
+          maximum:51,
+          gridThickness:0,
+          title:"ensemble members",
+          titleFontSize:15,
+        },
+        axisX:{
+          tickLength: 0,
+          minimum:-10,
+          maximum:10,
+          valueFormatString:  " ", // massive hack!
+          prefix: "",
+          
+        },     
+        dataPointWidth: 100, 
+        data: [
+        {
+          type: "stackedBar",
+          color: "#00FF00",
+          
+          toolTipContent: "{name}: {y}",
+           dataPoints: [
+          { y: no , name: "no threshold exceeded"}
+          ]
+        },
+        {
+          type: "stackedBar",
+          color: "#FFFF00",
+          dataPointMaxWidth: 50,
+          toolTipContent: "{name}: {y}", 
+           dataPoints: [
+          { y: two, name: "max 2-year return exceeded"}
+          ]
+        },
+          {
+          type: "stackedBar",
+          color: "#FF0000",
+          dataPointMaxWidth: 50,
+          toolTipContent: "{name}: {y}",
+           dataPoints: [
+          { y: five, name: "max 5-year return exceeded"}
+
+          ]
+        },
+          {
+          type: "stackedBar",
+          color: "#a75df0",
+          dataPointMaxWidth: 50,
+          toolTipContent: "{name}: {y}",
+           dataPoints: [
+          { y: twenty, name: "20-year return exceeded" }
+
+          ]
+        },
+
+
+
+        ]
+      });
+
+    chart.render();
+    
+    L.DomEvent.disableClickPropagation(el);
+
+    return el
+  }
+  control.addTo(map)
+  
+  chart = control
+}
+function removeChart() {
+  if (chart) {
+    map.removeControl(chart)
+    chart = null
+  }
+}
+
+function removeStuff() {
+  if (threshSlider) {
+    map.removeControl(threshSlider)
+    threshSlider = null
+  }
+  if (floodLayer) {
+    map.removeLayer(floodLayer)
+    floodLayer = null
+  }
+  removeChart()
+}
+
 function loadDEM (bbox) {
+  
+  var pos = bbox.getCenter()
+  
+  displayBboxGlofas(pos)
+  
+  var rlevel = 2
+  var time = null
+  fetchGlofasData (pos, time, rlevel)
+  
   var lonWest = bbox.getWest()
   var lonEast = bbox.getEast()
   var latSouth = bbox.getSouth()
@@ -135,18 +313,28 @@ function loadDEM (bbox) {
       cov = cov.coverages[0]
     }
     
-    //console.log(cov)
-    cov.loadRange(paramKey).then(function (range) {
-      //console.log(range)
-      
+    cov.loadRange(paramKey).then(function (range) {      
       var min = range.validMin
       var max = range.validMax
+      if (min === -Infinity) { // FIXME should return null (covjson-reader)
+        alert('No DEM data available')
+        removeStuff()
+        return
+      }
+      if (min === max) {
+        alert('Flat topography detected, no flood simulation available here')
+        removeStuff()
+        return
+      }
       
       var thresholds = logslider(min, max)
+      
+      console.log(min, max, thresholds)
       
       if (threshSlider) {
         map.removeControl(threshSlider)
       }
+      var firstCall = true
       threshSlider = new L.Control.Slider(function(value) {
         var threshold = thresholds[parseInt(value)]
         var newcov = applyThreshold(cov, threshold)
@@ -157,7 +345,10 @@ function loadDEM (bbox) {
           keys: [paramKey],
           palette: blue
 	      }).on('add', function () {
-	        map.fitBounds(floodLayer.getBounds())
+	        if (firstCall) {
+	          map.fitBounds(floodLayer.getBounds())
+	          firstCall = false
+	        }
 	      })
 	      floodLayer.setZIndex(10)
 	      floodLayer.addTo(map)
@@ -191,13 +382,67 @@ function loadDEM (bbox) {
   })
 }
 
+function fetchRlevel (lat, lon, rlevel) {
+  // return level (statistical x-year discharge)
+  return fetch('http://incubator.ecmwf.int/2e/rasdaman/ows?service=WCS&version=2.0.1&request=ProcessCoverages&query=for c in (return_level'+rlevel+') return encode(c[Lat('+lat+'), Long('+lon+')], "csv")')
+  .then(function (result) {
+    return result.text().then(function(data) {
+      
+      data = data.substr(1, data.length-2)
+      if (data === '-9999') {
+        // we're done here
+        return null
+      }
+      var rlevel_discharge = parseFloat(data)
+      return rlevel_discharge
+    })
+  })
+}
+
+function fetchDischarge (lat, lon, time) {
+  var time = '2016-01-01T00:00:00+00:00'
+  return fetch( 'http://incubator.ecmwf.int/2e/rasdaman/ows?service=WCS&version=2.0.1&request=ProcessCoverages&query=for c in (discharge_forecast) return encode(c[Lat('+lat+'), Long('+lon+'), ansi("' + time +'"), forecast(120), ensemble(0:51)], "csv")')
+    .then(function (result) {
+      return result.text().then(function(data) {
+        console.log('discharge:', data)
+        data = data.substr(1, data.length-2)
+        var ensemble_discharge = data.split(',').map(parseFloat)
+        return ensemble_discharge
+      })
+      
+    })
+}
+
+function fetchGlofasData (pos, time, rlevel) {
+  var lat = pos.lat
+  var lon = pos.lng
+  removeChart()
+  fetchRlevel(lat, lon, 2).then(function (dis2) {
+    if (dis2 === null) return
+    
+    var proms = [
+      fetchDischarge(lat, lon, time),
+      fetchRlevel(lat, lon, 5),
+      fetchRlevel(lat, lon, 20)
+    ]
+    Promise.all(proms).then(function (res) {
+      var ensemble_discharge = res[0]
+      var dis5 = res[1]
+      var dis20 = res[2]
+      var tallys = getTally (ensemble_discharge, dis2, dis5, dis20)
+      displayChart(tallys)  
+    })
+  })
+}
+
 var waterVal = 0
 
 function applyThreshold (cov, threshold) {
   var rangeWrapper = function (domain, range) {
     var newrange = shallowcopy(range)
     newrange.get = function (obj) {
-      if (range.get({x: obj.x, y: obj.y}) < threshold) {
+      var val = range.get({x: obj.x, y: obj.y})
+      if (val !== null && val < threshold) {
         return waterVal // random constant value = water
       } else {
         return null // no water
@@ -239,7 +484,55 @@ function applyThreshold (cov, threshold) {
   return newcov
 }
 
-function logslider( min, max ) {   
+var bboxPoly = null
+
+function displayBboxGlofas (pos) {
+  //return
+  if (bboxPoly) {
+    map.removeLayer(bboxPoly)
+  }
+  coordinates = getBoundingBoxGlofas( pos.lat, pos.lng );
+  var poly = [
+              [ coordinates[2], coordinates[3] ],
+              [ coordinates[4], coordinates[5] ],
+              [ coordinates[6], coordinates[7] ],
+              [ coordinates[8], coordinates[9] ],
+              [ coordinates[2], coordinates[3] ]
+              ]
+  console.log('poly', poly)
+  bboxPoly = L.polygon(poly, { fillOpacity: 0 } ).addTo(map);
+}
+
+function getBoundingBoxGlofas(lat, lon) {
+  // Compute the GloFAS pixel bounding box for a specific lat/lon            var coordinates = new Array(10);
+  // c_Lat, c_Lon,
+  // ulc_lat, ulc_Lon
+  // urc_lat, urc_Lon
+  // llc_lat, llc_Lon
+  // lrc_lat, lrc_Lon            // c_Lat
+  
+  var coordinates = []
+  coordinates[0] = Math.floor( lat * 10 ) / 10 + 0.05;
+  // c_Lon
+  coordinates[1] = Math.floor( lon * 10 ) / 10 + 0.05;            // ulc_lat
+  coordinates[2] = coordinates[0] + 0.05;
+  // urc_lat
+  coordinates[4] = coordinates[0] + 0.05;
+  // llc_lat
+  coordinates[6] = coordinates[0] - 0.05;
+  // lrc_lat
+  coordinates[8] = coordinates[0] - 0.05;            // ulc_lon
+  coordinates[3] = coordinates[1] + 0.05;
+  // urc_lon
+  coordinates[5] = coordinates[1] - 0.05;
+  // llc_lon
+  coordinates[7] = coordinates[1] - 0.05;
+  // lrc_lon
+  coordinates[9] = coordinates[1] + 0.05;
+  return coordinates;
+}
+
+function logslider( min, max ) {
   // The result should be between:
   //   minv, maxv
   var minv = Math.log( min );
