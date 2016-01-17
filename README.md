@@ -1,4 +1,4 @@
-# FloodIT
+# FloodIT!
 
 A [#FloodHack](http://floodhack.devpost.com/) project.
 
