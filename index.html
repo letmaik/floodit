@@ -98,7 +98,7 @@ var baseMaps = [{
 var sumalhege = L.tileLayer.wms("http://www.globalfloods.eu/proxy/?srv=ows", {
   layers: 'sumALHEGE',
   format: 'image/png',
-  time: '2016-01-16T00:00:00',
+  time: '2016-01-01T00:00:00',
   transparent: true,
   version: '1.3.0',
   attribution: "Globalfloods.eu"
@@ -131,7 +131,6 @@ map.on('click', function (e) {
   console.log(bbox)
   loadDEM(bbox)
 })
-
 
 
 map.on('baselayerchange', function(e) {
@@ -182,6 +181,73 @@ function getTally (ensemble_discharge, levs2, levs5, levs20) {
     levs2: levs2_tally,
     no: no_lev_tally
   }
+}
+
+function tallyColor(tallys){
+  var no = tallys.no
+  var two = tallys.levs2
+  var five = tallys.levs5
+  var twenty = tallys.levs20 
+
+  var largest = Math.max(no, two, five, twenty);
+
+  if (no == largest) {
+
+    return "#00FF00";
+
+  } else if (two == largest) {
+
+    return "#FFFF00";
+
+  } else if (five == largest) {
+
+    return "#FF0000";
+
+  } else if (twenty == largest) {
+
+    return "#a75df0";
+
+  }
+
+};
+
+function displayNoDataAvail() {
+  var control = L.control({
+    position: 'topleft'
+  })
+  control.onAdd = function (map) {
+    var el = L.DomUtil.create('div', 'charty info');
+    
+    el.innerHTML = 'No river data found, no return level chart available'
+    
+    return el
+  }
+  control.addTo(map)
+  
+  chart = control
+}
+
+var alertmsg = null
+
+function removeMsg() {
+  if (alertmsg) {
+    map.removeControl(alertmsg)
+    alertmsg = null
+  }
+}
+
+function displayMsg(msg) {
+  var control = L.control({
+    position: 'topleft'
+  })
+  control.onAdd = function (map) {
+    var el = L.DomUtil.create('div', 'info');
+    el.innerHTML = msg    
+    return el
+  }
+  control.addTo(map)
+  
+  alertmsg = control
 }
 
 function displayChart(tallys) {
@@ -257,10 +323,7 @@ function displayChart(tallys) {
           { y: twenty, name: "20-year return exceeded" }
 
           ]
-        },
-
-
-
+        }
         ]
       });
 
@@ -281,7 +344,7 @@ function removeChart() {
   }
 }
 
-function removeStuff() {
+function removeStuff(dontRemoveChart) {
   if (threshSlider) {
     map.removeControl(threshSlider)
     threshSlider = null
@@ -290,95 +353,106 @@ function removeStuff() {
     map.removeLayer(floodLayer)
     floodLayer = null
   }
-  removeChart()
+  if (!dontRemoveChart) {
+    removeChart()  
+  }
+  
 }
+
+var floodColor = null
 
 function loadDEM (bbox) {
   
-  var pos = bbox.getCenter()
+  removeMsg()
   
+  floodColor = null
+  
+  var pos = bbox.getCenter()
+  console.log(pos)
   displayBboxGlofas(pos)
   
   var rlevel = 2
   var time = null
-  fetchGlofasData (pos, time, rlevel)
-  
-  var lonWest = bbox.getWest()
-  var lonEast = bbox.getEast()
-  var latSouth = bbox.getSouth()
-  var latNorth = bbox.getNorth()
-  CovJSON.read("http://localhost:8080/wms?FORMAT=application/prs.coverage+json&TRANSPARENT=TRUE&STYLES=default-scalar%2Fdefault&LAYERS=dem2%2FBand1&COLORSCALERANGE=0%2C100&NUMCOLORBANDS=250&ABOVEMAXCOLOR=0x000000&BELOWMINCOLOR=0x000000&BGCOLOR=transparent&LOGSCALE=false&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG%3A4326&BBOX=" + lonWest + "," + latSouth + "," + lonEast + "," + latNorth +"&WIDTH=" + tilesize +"&HEIGHT=" + tilesize)
-  .then(function(cov) {
-    if (cov.coverages) {
-      cov = cov.coverages[0]
-    }
-    
-    cov.loadRange(paramKey).then(function (range) {      
-      var min = range.validMin
-      var max = range.validMax
-      if (min === -Infinity) { // FIXME should return null (covjson-reader)
-        alert('No DEM data available')
-        removeStuff()
-        return
-      }
-      if (min === max) {
-        alert('Flat topography detected, no flood simulation available here')
-        removeStuff()
-        return
-      }
-      
-      var thresholds = logslider(min, max)
-      
-      console.log(min, max, thresholds)
-      
-      if (threshSlider) {
-        map.removeControl(threshSlider)
-      }
-      var firstCall = true
-      threshSlider = new L.Control.Slider(function(value) {
-        var threshold = thresholds[parseInt(value)]
-        var newcov = applyThreshold(cov, threshold)
-        if (floodLayer) {
-          map.removeLayer(floodLayer)  
-        }
-        floodLayer = LayerFactory(newcov, {
-          keys: [paramKey],
-          palette: blue
-	      }).on('add', function () {
-	        if (firstCall) {
-	          map.fitBounds(floodLayer.getBounds())
-	          firstCall = false
+  fetchGlofasData (pos, time, rlevel).then(function () {
+
+	  var lonWest = bbox.getWest()
+	  var lonEast = bbox.getEast()
+	  var latSouth = bbox.getSouth()
+	  var latNorth = bbox.getNorth()
+	  CovJSON.read("http://localhost:8080/wms?FORMAT=application/prs.coverage+json&TRANSPARENT=TRUE&STYLES=default-scalar%2Fdefault&LAYERS=dem2%2FBand1&COLORSCALERANGE=0%2C100&NUMCOLORBANDS=250&ABOVEMAXCOLOR=0x000000&BELOWMINCOLOR=0x000000&BGCOLOR=transparent&LOGSCALE=false&SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&SRS=EPSG%3A4326&BBOX=" + lonWest + "," + latSouth + "," + lonEast + "," + latNorth +"&WIDTH=" + tilesize +"&HEIGHT=" + tilesize)
+	  .then(function(cov) {
+	    if (cov.coverages) {
+	      cov = cov.coverages[0]
+	    }
+	    
+	    cov.loadRange(paramKey).then(function (range) {      
+	      var min = range.validMin
+	      var max = range.validMax
+	      if (min === -Infinity) { // FIXME should return null (covjson-reader)
+	        displayMsg('No DEM data available')
+	        removeStuff(true)
+	        return
+	      }
+	      if (min === max) {
+	        displayMsg('Flat topography detected, no flood simulation available')
+	        removeStuff(true)
+	        return
+	      }
+	      
+	      var thresholds = logslider(min, max)
+	      
+	      console.log(min, max, thresholds)
+	      
+	      if (threshSlider) {
+	        map.removeControl(threshSlider)
+	      }
+	      var firstCall = true
+	      threshSlider = new L.Control.Slider(function(value) {
+	        var threshold = thresholds[parseInt(value)]
+	        var newcov = applyThreshold(cov, threshold)
+	        if (floodLayer) {
+	          map.removeLayer(floodLayer)  
+	        }
+	        floodLayer = LayerFactory(newcov, {
+	          keys: [paramKey],
+	          palette: floodColor ? L.coverage.palette.directPalette([floodColor]) : blue
+		      }).on('add', function () {
+		        if (firstCall) {
+		          map.fitBounds(floodLayer.getBounds())
+		          firstCall = false
+		        }
+		      })
+		      floodLayer.setZIndex(10)
+		      floodLayer.addTo(map)
+	      }, {
+	        orientation:'vertical',
+	        id: 'slider',
+	        logo: 'F',
+	        size: '250px',
+	        collapsed: false,
+	        value: 1,
+	        min: 0,
+	        max: 9,
+	        syncSlider: true,
+	        getValue: function(i) {
+	          return thresholds[i] + 'm'
 	        }
 	      })
-	      floodLayer.setZIndex(10)
-	      floodLayer.addTo(map)
-      }, {
-        orientation:'vertical',
-        id: 'slider',
-        logo: 'F',
-        size: '250px',
-        collapsed: false,
-        value: 1,
-        min: 0,
-        max: 9,
-        syncSlider: true,
-        getValue: function(i) {
-          return thresholds[i] + 'm'
-        }
-      })
-      threshSlider.addTo(map)
-    })
-    
-    // debug output
-    /*
-
-    var layer = LayerFactory(cov, {
-        keys: [paramKey],
-        palette: rainbow
-    })
-    layer.setZIndex(10)
-    layer.addTo(map);
-    */
+	      threshSlider.addTo(map)
+	    })
+	    
+	    // debug output
+	    /*
+	
+	    var layer = LayerFactory(cov, {
+	        keys: [paramKey],
+	        palette: rainbow
+	    })
+	    layer.setZIndex(10)
+	    layer.addTo(map);
+	    */
+	  })
+  
   })
 }
 
@@ -417,20 +491,25 @@ function fetchGlofasData (pos, time, rlevel) {
   var lat = pos.lat
   var lon = pos.lng
   removeChart()
-  fetchRlevel(lat, lon, 2).then(function (dis2) {
-    if (dis2 === null) return
+  return fetchRlevel(lat, lon, 2).then(function (dis2) {
+    if (dis2 === null) {
+      displayNoDataAvail()
+      return
+    }
     
     var proms = [
       fetchDischarge(lat, lon, time),
       fetchRlevel(lat, lon, 5),
       fetchRlevel(lat, lon, 20)
     ]
-    Promise.all(proms).then(function (res) {
+    return Promise.all(proms).then(function (res) {
       var ensemble_discharge = res[0]
       var dis5 = res[1]
       var dis20 = res[2]
       var tallys = getTally (ensemble_discharge, dis2, dis5, dis20)
       displayChart(tallys)  
+      
+      floodColor = tallyColor(tallys)
     })
   })
 }
