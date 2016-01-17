@@ -170,17 +170,23 @@ function getTally (ensemble_discharge, levs2, levs5, levs20) {
     } else if (ensemble_discharge[i] > levs5) {
       levs5_tally += 1 ;
     } else if (ensemble_discharge[i] > levs2) { 
-      levs20_tally += 1 ;
+      levs2_tally += 1 ;
     } else {
       no_lev_tally += 1;
     };
   };
-  return {
-    levs20: levs20_tally,
-    levs5: levs5_tally,
-    levs2: levs2_tally,
-    no: no_lev_tally
-  }
+  var res = {
+      levs20: levs20_tally,
+      levs5: levs5_tally,
+      levs2: levs2_tally,
+      no: no_lev_tally
+    }
+  console.log('levs2:',levs2);
+  console.log('levs5:',levs5);
+  console.log('levs20:',levs20);
+  console.log('ensemble:', ensemble_discharge)
+  console.log(res)
+  return res
 }
 
 function tallyColor(tallys){
@@ -418,7 +424,9 @@ function loadDEM (bbox) {
 	          palette: floodColor ? L.coverage.palette.directPalette([floodColor]) : blue
 		      }).on('add', function () {
 		        if (firstCall) {
-		          map.fitBounds(floodLayer.getBounds())
+		          map.fitBounds(floodLayer.getBounds(), {
+		            maxZoom: 9
+		          })
 		          firstCall = false
 		        }
 		      })
