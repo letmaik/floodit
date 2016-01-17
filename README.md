@@ -1,1 +1,3 @@
-# floodit
+# FloodIT
+
+![screencast](docs/flooding.gif)
